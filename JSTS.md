@@ -34,6 +34,7 @@
 30. Compatibility: assignability, bivariance функций, variance generics
 
 ## Область видимости, выполнение, `this`
+→ [детализация](./JSTS-02.md)
 31. Lexical scope, scope chain, global object
 32. Hoisting, TDZ, `var`/`let`/`const`
 33. Closures: lifetime, утечки, модульный паттерн
