@@ -617,11 +617,55 @@ typeof F.prototype; // "object"
 
 ### 36. `call` / `apply` / `bind`, partial application
 
-О чём речь: явно задать функции `this` и часть аргументов. Методы живут на `Function.prototype`. Путают с `Object.prototype`. На собеседовании просят отличить три штуки и объяснить `hasOwnProperty.call`.
+О чём речь: у обычной функции `this` берётся из **способа вызова** (п. 34). Иногда нужно вызвать ту же функцию, но подставить `this` руками — не через `obj.method()`. Для этого у каждой функции есть три метода: `call`, `apply` и `bind`. На собеседовании ждут, чем они отличаются, и зачем пишут `hasOwnProperty.call`.
+
+Это не отдельные ключевые слова языка. Это **методы самой функции**, как `.map` — метод массива.
+
+```js
+function hi() {}
+typeof hi.call;  // "function"
+typeof hi.bind;  // "function"
+```
+
+Лежат они на `Function.prototype`. Любая ordinary function их наследует. У `Object.prototype` метода `call` нет — путают из‑за записи `Object.prototype.hasOwnProperty.call(...)`.
 
 ---
 
-#### Три вызова
+#### Зачем это вообще
+
+Обычный вызов метода:
+
+```js
+const user = {
+  name: "Anna",
+  greet(punct) {
+    return this.name + punct;
+  },
+};
+
+user.greet("!"); // "Anna!"
+```
+
+Точка `user.greet` говорит движку: функция `greet`, а `this` пусть будет `user`.
+
+Если функцию сорвать с объекта, `this` пропадает:
+
+```js
+const greet = user.greet;
+greet("!"); // this не user → в strict ошибка, в sloppy не "Anna"
+```
+
+`call` / `apply` / `bind` как раз говорят: «выполни `greet`, но `this` всё равно `user`». Без повторной точки слева.
+
+Тот же приём, когда функции изначально нет на объекте: есть свободная `function greet() { return this.name }` и отдельно `{ name: "Anna" }`. Связать их на один вызов — `call`/`apply`. Пришить насовсем — `bind`.
+
+---
+
+#### `call` — вызвать сейчас, this и аргументы списком
+
+Сигнатура: `fn.call(thisArg, arg1, arg2, ...)`.
+
+Первый аргумент становится `this` внутри `fn`. Остальные — обычные параметры `fn`, как если бы написали `fn(arg1, arg2)`, только `this` уже не из точки.
 
 ```js
 function greet(punct) {
@@ -630,31 +674,95 @@ function greet(punct) {
 
 const user = { name: "Anna" };
 
-greet.call(user, "!");           // "Anna!" — вызвать сейчас, args списком
-greet.apply(user, ["!"]);        // "Anna!" — args массивом
-const g = greet.bind(user, "!"); // новая функция
-g();                             // "Anna!"
+greet.call(user, "!"); // "Anna!"
 ```
 
-**`call(thisArg, ...args)`** — выполнить сразу.  
-**`apply(thisArg, argsArray)`** — сразу, аргументы из массива / array-like. После `fn.call(ctx, ...arr)` почти не нужен; ещё жив для `Math.max.apply(null, nums)` в старом коде (лучше `Math.max(...nums)`).  
-**`bind(thisArg, ...partialArgs)`** — **не вызывает**. Возвращает новую функцию с пришитым `this` и уже подставленными первыми аргументами. Исходная `greet` не меняется.
+Читается: вызови `greet` прямо сейчас; внутри `this` будет `user`; в `punct` попадёт `"!"`.
 
-Повторный bind:
+Ещё один объект — тот же `greet`, другой `this`:
 
 ```js
-const g1 = greet.bind(user);
-const g2 = g1.bind({ name: "Bob" });
-g2("!"); // всё ещё Anna: this у bound function второй bind не перебивает
+greet.call({ name: "Boris" }, "?"); // "Boris?"
 ```
 
-Аргументы второго bind **добавляются**, this — нет.
+Функцию не копируют и не меняют. Меняется только этот конкретный запуск.
+
+`thisArg` на практике кладут объект. Для ordinary function в не-strict примитив ещё и упакуют в обёртку; в strict `this` может остаться примитивом. Это тонкость, не бытовой кейс.
 
 ---
 
-#### Partial application
+#### `apply` — то же самое, аргументы массивом
 
-Зафиксировать префикс аргументов:
+Сигнатура: `fn.apply(thisArg, [arg1, arg2, ...])`.
+
+`this` задаётся так же, как у `call`. Разница только в **форме аргументов**: один массив (или array-like) вместо списка через запятую.
+
+```js
+function greet(punct, extra) {
+  return this.name + punct + extra;
+}
+
+const user = { name: "Anna" };
+
+greet.call(user, "!", " :)");    // "Anna! :)"
+greet.apply(user, ["!", " :)"]); // то же самое
+```
+
+Когда удобен `apply`: аргументы уже лежат в массиве, и ты не хочешь расписывать их руками. Старый хит:
+
+```js
+Math.max.apply(null, [3, 1, 8]); // 8
+```
+
+У `Math.max` нет осмысленного `this`, поэтому в первый слот часто ставят `null`. Сейчас пишут `Math.max(...[3, 1, 8])` — `apply` для этого почти не нужен.
+
+`call` и `apply` **оба вызывают функцию сразу** и возвращают её результат. Это не «регистрация на потом».
+
+---
+
+#### `bind` — не вызывает, а клеит новую функцию
+
+Сигнатура: `const bound = fn.bind(thisArg, arg1, ...)`.
+
+`bind` **не запускает** `fn`. Он возвращает **другую** функцию. У неё `this` уже навсегда равен `thisArg`. Можно сразу пришить и первые аргументы.
+
+```js
+function greet(punct) {
+  return this.name + punct;
+}
+
+const user = { name: "Anna" };
+const annaHi = greet.bind(user);
+
+annaHi("!");  // "Anna!"
+annaHi("?");  // "Anna?"
+greet("!");   // исходная greet не изменилась, this по-прежнему от вызова
+```
+
+`annaHi` можно передать в `setTimeout` и в `addEventListener` — `this` не потеряется, потому что он уже зашит внутрь. Это главное бытовое применение: колбэк из метода объекта (п. 34).
+
+```js
+setTimeout(user.greet, 0);            // this потерян
+setTimeout(user.greet.bind(user), 0); // this = user
+```
+
+Исходная `user.greet` как лежала на объекте, так и лежит. `bind` делает **новый** объект-функцию.
+
+Повторный `bind` `this` не перебивает:
+
+```js
+const a = greet.bind({ name: "Anna" });
+const b = a.bind({ name: "Boris" });
+b("!"); // "Anna!" — второй bind this не сменил
+```
+
+Дополнительные аргументы второго `bind` **добавляются** к уже пришитым. На собеседовании путают: this заморожен с первого bind, аргументы копятся.
+
+---
+
+#### Partial application — пришить не только this, но и аргументы
+
+«Частичное применение» значит: часть параметров подставить заранее, остальные — позже.
 
 ```js
 function add(a, b, c) {
@@ -662,40 +770,82 @@ function add(a, b, c) {
 }
 
 const add1 = add.bind(null, 1);
-add1(2, 3); // 6
+add1(2, 3); // 6  — это add(1, 2, 3)
 ```
 
-`null` как thisArg, когда this не важен. Каррирование «по одному аргументу» чаще пишут руками или библиотекой, не `bind`.
+`null` в `thisArg`: функции `this` не нужен, слот у `bind` всё равно обязателен. Здесь это заглушка, не «осмысленный this».
+
+То же через `call` нельзя «отложить»: `call` сразу выполнит `add`. Отложить умеет только `bind` (или своя обёртка `const add1 = (b, c) => add(1, b, c)`).
+
+Каррирование «по одному аргументу» (`add(1)(2)(3)`) — соседняя идея, обычно не через `bind`.
+
+---
+
+#### Сводка трёх методов
+
+| | Вызывает сейчас? | `this` | Аргументы |
+|---|---|---|---|
+| `call` | да | первый параметр | дальше списком |
+| `apply` | да | первый параметр | второй параметр — массив |
+| `bind` | нет, новая функция | пришит навсегда | можно пришить префикс |
+
+`call` и `apply` — два способа **одного** действия «вызови». `bind` — другое действие: «сделай обёртку».
 
 ---
 
 #### Чужой метод на чужом this
 
+Раз метод — это функция, её можно снять с одного объекта и `call`-нуть с другим `this`.
+
 ```js
-Object.prototype.hasOwnProperty.call(obj, "x");
-Object.prototype.toString.call(value); // "[object Array]"
-Array.prototype.slice.call(arguments);
+function has(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
 ```
 
-Берут функцию `hasOwnProperty` (это function, у неё есть `.call`) и говорят: выполнись, будто `this` это `obj`.
+Что происходит по шагам:
 
-Зачем не `obj.hasOwnProperty("x")`:
+1. `Object.prototype.hasOwnProperty` — достали **функцию** «есть ли своё поле».
+2. У этой функции, как у любой, есть `.call`.
+3. `.call(obj, key)` — выполни `hasOwnProperty`, будто `this` это `obj`, вопрос про ключ `key`.
 
-- у `obj` поле `hasOwnProperty` могут перезаписать;
-- `Object.create(null)` — нет прототипа, метода нет вообще.
+Почему не `obj.hasOwnProperty(key)`:
 
-`call` здесь не «магия Object.prototype.call» — такого метода нет. Есть `Function.prototype.call` у самой функции-метода.
+- у `obj` могут сделать поле `hasOwnProperty: 123` — вызов сломается;
+- `Object.create(null)` без прототипа — метода нет, будет TypeError.
+
+То же для тега типа: `Object.prototype.toString.call(value)` → `"[object Array]"` (п. 3 первой секции). Не `value.toString()`, потому что у массива свой `toString`.
+
+Запись выглядит как `Object.prototype....call`, но вызывается `call` **у функции-метода**, не у `Object.prototype`.
 
 ---
 
-#### Стрелки и new
+#### Стрелки и `new`
 
-`arrow.call(x)` this стрелки не меняет.  
-`boundFn` можно `new`: тогда this — новый экземпляр, а пришитые bind-аргументы остаются (редко нужно, путает).
+У стрелки свой `this` лексический (п. 35). `arrow.call(x)` и `arrow.bind(x)` **не меняют** её `this`. `bind` у стрелки всё ещё может пришить аргументы.
 
-В TypeScript после `bind` из типа вычитаются пришитые параметры (`CallableFunction.bind`). Явный `this` в сигнатуре заставляет вызывать через `call`/`bind`.
+Функцию после `bind` технически можно вызвать через `new`: тогда `this` будет новым экземпляром, а пришитые bind-аргументы останутся. Так почти не пишут.
 
-Что сказать на собеседовании: call/apply — сейчас с данным this; bind — новая функция. Partial — первые аргументы на bind. `Proto.method.call(x)` — применить метод к x, у которого своего честного метода нет.
+---
+
+#### TypeScript
+
+`call` / `apply` / `bind` типизированы на `CallableFunction`. После `bind` из типа функции пропадают уже подставленные параметры — подсказка совпадает с рантаймом.
+
+Если у функции объявлен первый параметр `this`:
+
+```ts
+function greet(this: { name: string }, punct: string) {
+  return this.name + punct;
+}
+
+greet("!");                     // ошибка: нет контекста
+greet.call({ name: "A" }, "!"); // ок
+```
+
+Компилятор требует `call`/`apply`/`bind` (или вызов методом объекта). В JS параметра `this` по-прежнему нет.
+
+Что сказать на собеседовании: это методы функции. `call` и `apply` запускают её сейчас с данным `this` (список vs массив аргументов). `bind` возвращает новую функцию с пришитым `this` и опционально первыми аргументами. Потерянный метод в таймере лечат `bind`. `hasOwnProperty.call(obj, key)` — взять чужой метод и выполнить его на `obj`.
 
 ---
 
