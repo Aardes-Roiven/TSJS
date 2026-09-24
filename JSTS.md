@@ -70,6 +70,7 @@
 60\. `valueOf` и неявные преобразования объектов
 
 ## Функции и функциональный стиль
+→ [детализация](./JSTS-04.md)
 61\. First-class functions, higher-order functions
 62\. Pure functions, side effects, referential transparency
 63\. Currying, partial application, composition
