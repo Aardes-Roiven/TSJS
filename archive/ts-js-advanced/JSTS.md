@@ -93,6 +93,7 @@
 80\. Call signatures, construct signatures, callable objects
 
 ## Асинхронность и конкурентность
+→ [детализация](./JSTS-05.md)
 81\. Call stack, heap, queue
 82\. Event loop: browsers vs Node (phases)
 83\. Macrotasks vs microtasks
